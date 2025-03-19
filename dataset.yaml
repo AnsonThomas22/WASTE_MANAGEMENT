@@ -1,0 +1,4 @@
+train: C:\Users\anube\VS_python\waste_managemnet_app\waste_dataset
+val: C:\Users\anube\VS_python\waste_managemnet_app\waste_dataset_val
+nc: 6
+names: ["cardboard","glass","metal","paper","plastic","trash"]
