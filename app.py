@@ -12,21 +12,17 @@ import os
 import matplotlib.pyplot as plt
 from PIL import Image, ImageEnhance
 from streamlit_js_eval import streamlit_js_eval
+from streamlit_folium import st_folium
 
-# First, make sure streamlit_folium is imported correctly
-try:
-    from streamlit_folium import st_folium
-except ImportError:
-    st.error("Missing required package. Please install using: pip install streamlit-folium")
-    st.stop()
 
-# API Endpoint
+
+
 API_BASE_URL = "http://127.0.0.1:8000"
 
-# SG Palya Coordinates (Map centered here)
+
 SG_PALYA_CENTER = (12.9352, 77.6095)
 
-# Define specific roads in SG Palya for the truck route
+
 SG_PALYA_ROUTE = [
     (12.9352, 77.6095),  # SG Palya Main Road Start
     (12.9360, 77.6105),  # Junction 1
@@ -38,15 +34,14 @@ SG_PALYA_ROUTE = [
     (12.9352, 77.6095),  # Back to Start
 ]
 
-# Global variables - use session state to persist between reruns
-# Ensure session state variables exist
+
 if 'vehicle_location' not in st.session_state:
     st.session_state.vehicle_location = SG_PALYA_ROUTE[0]
 
 if 'active_requests' not in st.session_state:
     st.session_state.active_requests = []
 
-if 'completed_requests' not in st.session_state:   # ✅ Track completed requests
+if 'completed_requests' not in st.session_state:  
     st.session_state.completed_requests = []
 
 if 'current_route_index' not in st.session_state:
@@ -70,10 +65,10 @@ if 'last_update_time' not in st.session_state:
 if 'gps_location' not in st.session_state:
     st.session_state.gps_location = None
 
-# Load YOLOv8 Model
+
 @st.cache_resource
 def load_custom_model():
-    model_path = r"weights/best.pt"  # Replace with your actual model path
+    model_path = r"weights/best.pt"  
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model file not found at {model_path}")
     return YOLO(model_path)
@@ -85,7 +80,7 @@ except FileNotFoundError:
     st.warning("Model file not found. Using mock detection for demonstration.")
     model = None
 
-# Custom class mapping for waste types
+
 WASTE_CLASSES = {
     0: "Biodegradable",
     1: "Cardboard",
@@ -97,27 +92,24 @@ WASTE_CLASSES = {
 
 def preprocess_image(image):
     """Enhance and preprocess the image while keeping color intact."""
-    # Convert PIL image to OpenCV format (NumPy array)
+  
     image = np.array(image)
 
-    # Resize image to standard input size (YOLO prefers fixed sizes)
+   
     image = cv2.resize(image, (640, 640))
 
-    # Sharpen the image using a kernel
     sharpening_kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])  
     image = cv2.filter2D(image, -1, sharpening_kernel)
 
-    # Convert back to PIL for brightness & contrast adjustments
+  
     image_pil = Image.fromarray(image)
 
-    # Enhance brightness & contrast
     enhancer = ImageEnhance.Contrast(image_pil)
-    image_pil = enhancer.enhance(1.2)  # Increase contrast slightly
+    image_pil = enhancer.enhance(1.2) 
 
-    # Convert back to OpenCV format
+
     enhanced_image = np.array(image_pil)
 
-    # Apply slight Gaussian blur to remove noise
     enhanced_image = cv2.GaussianBlur(enhanced_image, (3, 3), 0)
 
     return enhanced_image
@@ -125,28 +117,24 @@ def preprocess_image(image):
 def detect_waste(image):
     """Run YOLOv8 on the uploaded image and classify waste types with preprocessing."""
     if model is None:
-        # If no model is loaded, return random detection for demo
+       
         waste_types = list(WASTE_CLASSES.values())
         detections = [{"waste_type": random.choice(waste_types), "confidence": random.uniform(0.7, 0.95)}]
         return np.array(image), detections
 
-    # Preprocess the image for better detection (without grayscale)
+   
     processed_image = preprocess_image(image)
 
-    # Run detection (Use .predict() in YOLOv8)
     results = model.predict(processed_image, conf=0.2)
 
-    # Draw bounding boxes and annotations
     annotated_image = results[0].plot()
 
-    # Extract detected objects
     detections = []
     for result in results:
         for box in result.boxes:
-            confidence = float(box.conf[0])  # Confidence score
-            class_id = int(box.cls[0])  # Class ID
+            confidence = float(box.conf[0]) 
+            class_id = int(box.cls[0])  
 
-            # Get waste category based on trained class names
             waste_type = WASTE_CLASSES.get(class_id, "Unknown")
 
             detections.append({
@@ -157,7 +145,6 @@ def detect_waste(image):
     return annotated_image, detections
 
 def get_active_requests():
-    """Fetch active pickup requests from the API"""
     try:
         with st.spinner("Fetching active requests..."):
             response = requests.get(f"{API_BASE_URL}/requests")
@@ -172,65 +159,9 @@ def get_active_requests():
             {"user": "user2", "location": {"latitude": 12.9370, "longitude": 77.6090}, "status": "pending", "waste_type": "Bio-waste"}
         ]
 
-def interpolate_position(point1, point2, progress):
-    """Interpolate between two points for smooth movement"""
-    lat = point1[0] + (point2[0] - point1[0]) * progress
-    lng = point1[1] + (point2[1] - point1[1]) * progress
-    return (lat, lng)
 
-def update_vehicle_location():
-    """Update the truck location every 5 seconds along the predefined route"""
-    # Ensure session variables are initialized
-    if "current_route_index" not in st.session_state:
-        st.session_state.current_route_index = 0
-        st.session_state.route_progress = 0.0
-        st.session_state.last_update_time = time.time()  # Track last update time
-
-    # Check if 5 seconds have passed
-    if time.time() - st.session_state.last_update_time < 5:
-        return  # Skip update if not enough time has passed
-
-    # Update last update time
-    st.session_state.last_update_time = time.time()
-
-    # Get current and next route indices
-    current_idx = st.session_state.current_route_index
-    next_idx = (current_idx + 1) % len(SG_PALYA_ROUTE)
-
-    # Move progress by a small amount
-    st.session_state.route_progress += 0.1  # Adjust step size for smoother movement
-
-    # If progress reaches 1, move to the next segment
-    if st.session_state.route_progress >= 1.0:
-        st.session_state.current_route_index = next_idx
-        st.session_state.route_progress = 0.0
-        current_idx = next_idx
-        next_idx = (current_idx + 1) % len(SG_PALYA_ROUTE)
-
-    # Compute new interpolated position
-    current_point = SG_PALYA_ROUTE[current_idx]
-    next_point = SG_PALYA_ROUTE[next_idx]
-    st.session_state.vehicle_location = interpolate_position(
-        current_point, next_point, st.session_state.route_progress
-    )
-
-    # Send updated location to backend
-    try:
-        requests.post(
-            f"{API_BASE_URL}/update_vehicle",
-            json={
-                "vehicle_id": "truck-001",
-                "location": {
-                    "latitude": st.session_state.vehicle_location[0],
-                    "longitude": st.session_state.vehicle_location[1]
-                }
-            }
-        )
-    except:
-        pass  # Handle API failures gracefully
 
 def check_nearby_requests():
-    """Check if any requests are near the current vehicle location"""
     if "vehicle_location" not in st.session_state:
         st.error("🚨 Vehicle location not available!")
         return
@@ -249,11 +180,12 @@ def check_nearby_requests():
             # Calculate distance between vehicle and request location
             distance = geodesic(st.session_state.vehicle_location, request_location).meters
 
-            if distance < 100: #changed from 50 to 100
-                # Send completion request to API
+            if distance < 100:
                 try:
-                    response = requests.post(f"{API_BASE_URL}/complete_request",
-                                             json={"request_id": request.get("id", ""), "status": "completed"})
+                    response = requests.post(
+                        f"{API_BASE_URL}/complete_request",
+                        json={"request_id": request.get("id", ""), "status": "completed"}
+                    )
                     response.raise_for_status()
                 except requests.RequestException as e:
                     st.warning(f"⚠️ Error completing request: {e}")
@@ -272,51 +204,26 @@ def check_nearby_requests():
     st.session_state.active_requests = remaining_requests
 
 def check_user_proximity():
-    """Check if vehicle is near user location and show notification"""
-    # Get user location (for demo, using SG Palya coordinates)
     user_location = SG_PALYA_CENTER
-
-    # Calculate distance from vehicle
     distance = geodesic(st.session_state.vehicle_location, user_location).meters
 
-    # If vehicle is within 100 meters and notification not shown
-    if distance < 100 and not st.session_state.notification_shown:
+    if distance < 100 and not st.session_state.get("notification_shown", False):
         st.warning("🚛 Waste collection truck is approaching your location! Please bring your trash for collection.", icon="🔔")
         st.session_state.notification_shown = True
     elif distance >= 100:
         st.session_state.notification_shown = False
 
-def get_current_truck_location():
-    route_idx = st.session_state.current_route_index
-    route_progress = st.session_state.route_progress
 
-    if route_idx < len(SG_PALYA_ROUTE) - 1:
-        start_lat, start_lon = SG_PALYA_ROUTE[route_idx]
-        end_lat, end_lon = SG_PALYA_ROUTE[route_idx + 1]
-
-        lat = start_lat + (end_lat - start_lat) * (route_progress / 100.0)
-        lon = start_lon + (end_lon - start_lon) * (route_progress / 100.0)
-        return lat, lon
-    else:
-        return SG_PALYA_ROUTE[-1]
-    
-def distance(lat1, lon1, lat2, lon2):
-    # Simple distance calculation (replace with more accurate method if needed)
-    return ((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2) ** 0.5 * 100000 #Approximate distance
 
 def create_map():
-    """Create and return a folium map centered on SG Palya."""
-    # Create map centered on SG Palya
     m = folium.Map(location=SG_PALYA_CENTER, zoom_start=16)
     
-    # Add truck marker
     folium.Marker(
         st.session_state.vehicle_location,
         tooltip="🚛 Waste Collection Truck",
         icon=folium.Icon(color='blue', icon='truck', prefix='fa')
     ).add_to(m)
     
-    # Add route line
     folium.PolyLine(
         SG_PALYA_ROUTE,
         color='blue',
@@ -324,20 +231,16 @@ def create_map():
         opacity=0.8
     ).add_to(m)
     
-    # Check and remove completed requests
     updated_requests = []
     truck_location = st.session_state.vehicle_location
     
-    # Add request markers
     for request in st.session_state.active_requests:
         request_location = (
             request.get("location", {}).get("latitude", 12.9352 + random.uniform(-0.003, 0.003)),
             request.get("location", {}).get("longitude", 77.6095 + random.uniform(-0.003, 0.003))
         )
-
         waste_type = request.get("waste_type", "Unknown")
-
-        # Determine marker color based on waste type
+        
         color_map = {
             "Bio-waste": "green",
             "Paper/Cardboard": "blue",
@@ -346,28 +249,25 @@ def create_map():
             "Medical waste": "orange"
         }
         color = color_map.get(waste_type, "gray")
-
-        # Calculate distance between truck and request
+        
         distance = geodesic(truck_location, request_location).meters
         
-        if distance < 50:  # If truck is within 50 meters, mark request as completed
+        if distance < 50:
             st.success(f"✅ Pickup request completed at {request_location}!")
         else:
-            updated_requests.append(request)  # Keep pending requests
-            
+            updated_requests.append(request)
             folium.Marker(
                 request_location,
                 tooltip=f"🗑️ Pickup Request: {waste_type} ({round(distance, 2)}m away)",
                 icon=folium.Icon(color=color, icon='trash', prefix='fa')
             ).add_to(m)
-
-    # Update session state with only pending requests
+    
     st.session_state.active_requests = updated_requests
-
-    # Add click functionality
+    
     m.add_child(folium.LatLngPopup())
-
+    
     return m
+
 
 
 def main():
@@ -506,19 +406,7 @@ def main():
     elif choice == "🚛 Track Vehicles":
             st.subheader("🚛 Live Vehicle Tracking in SG Palya")
 
-            col1, col2 = st.columns([3, 1])
-            with col2:
-                if st.button("🔄 Refresh Data"):
-                    st.session_state.last_update_time = time.time()  # Reset timer on manual refresh
-                    st.rerun()
-
-                # Route progress bar
-                st.write("📍 Route Completion Progress")
-                route_idx = st.session_state.current_route_index
-                route_progress = st.session_state.route_progress
-                total_progress = (route_idx + route_progress / 100) / len(SG_PALYA_ROUTE) * 100
-                st.progress(int(total_progress))
-
+           
             map_container = st.container()
             requests_container = st.container()
 
@@ -541,25 +429,8 @@ def main():
                             st.progress({"pending": 25, "approved": 50, "in_progress": 75, "completed": 100}.get(request.get('status', 'pending')))
                             st.write("---")
 
-            # Truck movement logic
-            if st.session_state.animation_running:
-                current_time = time.time()
-                if current_time - st.session_state.last_update_time > 5:
-                    st.session_state.last_update_time = current_time
+           
 
-                    # Move truck forward along the route
-                    if st.session_state.current_route_index < len(SG_PALYA_ROUTE) - 1:
-                        st.session_state.current_route_index += 1
-                        st.session_state.route_progress = 0  # Reset progress for new segment
-
-                    # Check and cancel requests if the truck is near them
-                    check_nearby_requests()
-
-                    # Gradual movement update
-                    for _ in range(1): # change to 1 to move 200m every 5 seconds.
-                        time.sleep(0.5)  # Simulate movement delay
-                        st.session_state.route_progress += 20  # Increase progress in steps
-                        st.rerun()
 
         
     elif choice == "♻️ Waste Classification":

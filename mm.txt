@@ -1,0 +1,15 @@
+streamlit
+requests
+folium
+numpy
+pillow  # (for PIL)
+ultralytics
+opencv-python-headless  # (for cv2)
+geopy
+matplotlib
+streamlit-js-eval
+fastapi
+pydantic
+pymongo
+uuid
+datetime
