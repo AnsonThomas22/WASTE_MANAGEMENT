@@ -203,17 +203,6 @@ def check_nearby_requests():
     # Update session state with remaining requests
     st.session_state.active_requests = remaining_requests
 
-def check_user_proximity():
-    user_location = SG_PALYA_CENTER
-    distance = geodesic(st.session_state.vehicle_location, user_location).meters
-
-    if distance < 100 and not st.session_state.get("notification_shown", False):
-        st.warning("🚛 Waste collection truck is approaching your location! Please bring your trash for collection.", icon="🔔")
-        st.session_state.notification_shown = True
-    elif distance >= 100:
-        st.session_state.notification_shown = False
-
-
 
 def create_map():
     m = folium.Map(location=SG_PALYA_CENTER, zoom_start=16)
@@ -285,23 +274,23 @@ def main():
         unsafe_allow_html=True
     )
 
-    # Show page loading progress bar
+    
     progress_bar = st.progress(0)
     for i in range(100):
         # Simulate some work
         time.sleep(0.01)
         progress_bar.progress(i + 1)
     
-    progress_bar.empty()  # Remove progress bar after loading
+    progress_bar.empty()  
 
-    # Title with color and spacing
+  
     st.title("🌍 BBMP Waste Management System - SG Palya")
 
-    # Sidebar menu with emojis for better navigation
+   
     menu = ["🏠 Home", "📦 Request Pickup", "🚛 Track Vehicles", "♻️ Waste Classification"]
     choice = st.sidebar.radio("📌 Select an option", menu)
 
-    # Function to create colored info boxes
+    
     def info_box(text, emoji, color):
         st.markdown(
             f'<div style="background-color:{color}; padding:10px; border-radius:8px; font-size:18px; color:white;">{emoji} {text}</div>',
@@ -442,7 +431,7 @@ def main():
         uploaded_file = st.file_uploader("Upload an image of waste for classification", type=["jpg", "png", "jpeg"])
         
         if uploaded_file is not None:
-            # Show loading spinner while processing image
+            
             with st.spinner("Loading image..."):
                 image = Image.open(uploaded_file)
             
@@ -451,12 +440,12 @@ def main():
             with col1:
                 st.image(image, caption="Uploaded Image", use_column_width=True)
             
-            # Process image with YOLO
+           
             with st.spinner("🧠 Analyzing waste with AI..."):
-                # Show a progress bar for AI processing
+               
                 analysis_progress = st.progress(0)
                 for i in range(100):
-                    time.sleep(0.02)  # Simulate AI processing time
+                    time.sleep(0.02) 
                     analysis_progress.progress(i + 1)
                 
                 detected_image, detections = detect_waste(image)
@@ -481,7 +470,7 @@ def main():
                     # Add option to create pickup request based on detection
                     if st.button("Request Pickup for this Waste"):
                         with st.spinner("Creating pickup request..."):
-                            # Determine primary waste type from detections
+                          
                             if detections:
                                 primary_waste = max(detections, key=lambda x: x["confidence"])["waste_type"]
                                 
